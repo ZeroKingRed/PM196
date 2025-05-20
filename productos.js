@@ -1,5 +1,5 @@
 const productos = [
-  { nombre: "Celular", precio: 8000 },
+  { nombre: "Celular", precio: 10000 },
   { nombre: "TV", precio: 7000 },
   { nombre: "Auto", precio: 150000 },
   { nombre: "Chicle", precio: 5 }
