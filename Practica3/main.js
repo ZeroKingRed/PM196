@@ -1,4 +1,3 @@
-// main.js
 const restar = require('./utils');
 
 console.log(restar(10, 5));
