@@ -1,189 +1,219 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  ScrollView,
   View,
   Text,
+  SectionList,
+  FlatList, // Importamos FlatList
+  Image,
+  ActivityIndicator,
   StyleSheet,
-  Switch,
-  Button,
-  TextInput,
-  SafeAreaView,
-  Dimensions,
-  Platform,
+  SafeAreaView, // Usamos SafeAreaView para evitar que el contenido se superponga con la barra de estado
+  TouchableOpacity, // Para hacer botones
 } from 'react-native';
 
-const { width } = Dimensions.get('window');
-
-/*  ───────────  VALORES VÁLIDOS PARA keyboardDismissMode SEGÚN PLATAFORMA  ─────────── */
-const KEYBOARD_MODES = Platform.OS === 'ios'
-  ? ['none', 'on-drag', 'interactive'] // iOS permite los tres
-  : ['none', 'on-drag'];               // Android/web solo estos dos
-
 const App = () => {
-  /* ───────────  REFERENCIA TIPADA DEL SCROLLVIEW  ─────────── */
-  const scrollViewRef = useRef<ScrollView>(null);
+  // Estado para los datos de SectionList
+  const [secciones, setSecciones] = useState([]);
+  // Nuevo estado para los datos de FlatList (una lista plana de todos los Pokémon)
+  const [pokemonPlano, setPokemonPlano] = useState([]);
+  // Estado para el indicador de carga
+  const [cargando, setCargando] = useState(true);
+  // Nuevo estado para controlar qué lista se muestra: 'section' o 'flat'
+  const [tipoDeLista, setTipoDeLista] = useState('section');
 
-  /* ───────────  ESTADOS DE LOS CONTROLES  ─────────── */
-  const [horizontal, setHorizontal] = useState(false);
-  const [showIndicators, setShowIndicators] = useState(true);
-  const [scrollEnabled, setScrollEnabled] = useState(true);
-  const [bounces, setBounces] = useState(true);
-  const [pagingEnabled, setPagingEnabled] = useState(false);
+  useEffect(() => {
+    const obtenerDatos = async () => {
+      try {
+        // Paso 1: Obtener los primeros 4 tipos de Pokémon
+        const resTipos = await fetch('https://pokeapi.co/api/v2/type');
+        const tiposData = await resTipos.json();
+        const tiposLimitados = tiposData.results.slice(0, 2);
 
-  const [keyboardIdx, setKeyboardIdx] = useState(0);
-  const keyboardDismissMode = KEYBOARD_MODES[keyboardIdx];
+        // Paso 2: Procesar cada tipo para obtener sus Pokémon
+        const seccionesFinales = await Promise.all(
+          tiposLimitados.map(async (tipo) => {
+            const resTipo = await fetch(tipo.url);
+            const detalleTipo = await resTipo.json();
+            
+            // Limitar a los primeros 5 Pokémon de ese tipo
+            const pokemons = detalleTipo.pokemon.slice(0, 2);
 
-  const [text, setText] = useState('');
+            // Obtener los detalles de cada Pokémon
+            const datosPokemon = await Promise.all(
+              pokemons.map(async ({ pokemon }) => {
+                const resPoke = await fetch(pokemon.url);
+                const dataPoke = await resPoke.json();
+                return {
+                  id: dataPoke.id,
+                  name: dataPoke.name,
+                  image: dataPoke.sprites.front_default,
+                };
+              })
+            );
 
-  /* ───────────  MANEJADORES DE SCROLL  ─────────── */
-  const scrollToEnd = () => {
-    if (scrollViewRef.current?.scrollToEnd) {
-      scrollViewRef.current.scrollToEnd({ animated: true });
-    }
-  };
+            return {
+              title: tipo.name.charAt(0).toUpperCase() + tipo.name.slice(1),
+              data: datosPokemon,
+            };
+          })
+        );
+        
+        // Paso 3: Preparar los datos para ambas listas
+        setSecciones(seccionesFinales);
 
-  const scrollToTop = () => {
-    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-  };
+        // Creamos una lista plana (un solo array) con todos los pokémon para el FlatList
+        const todosLosPokemon = seccionesFinales.flatMap(seccion => seccion.data);
+        setPokemonPlano(todosLosPokemon);
 
-  const changeKeyboardMode = () =>
-    setKeyboardIdx((i) => (i + 1) % KEYBOARD_MODES.length);
+      } catch (error) {
+        console.error('Error al cargar datos:', error);
+      } finally {
+        setCargando(false);
+      }
+    };
 
-  /* ───────────  UI  ─────────── */
+    obtenerDatos();
+  }, []);
+
+  // Componente reutilizable para renderizar cada Pokémon en la lista
+  const renderItemPokemon = ({ item }) => (
+    <View style={styles.item}>
+      <Image
+        source={{ uri: item.image }}
+        style={styles.image}
+        // Imagen de fallback por si falla la carga
+        defaultSource={{ uri: 'https://placehold.co/60x60/cccccc/ffffff?text=...' }}
+      />
+      <Text style={styles.name}>{item.name.toUpperCase()}</Text>
+    </View>
+  );
+
+  // Si está cargando, mostramos un indicador
+  if (cargando) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#ff5733" />
+        <Text>Cargando Pokémon...</Text>
+      </View>
+    );
+  }
+
+  // Renderizado principal de la aplicación
   return (
     <SafeAreaView style={styles.container}>
-      {/* Panel de controles */}
-      <View style={styles.controls}>
-        <Text style={styles.title}>Controles del ScrollView</Text>
-
-        <View style={styles.controlRow}>
-          <Text>Horizontal:</Text>
-          <Switch
-            value={horizontal}
-            onValueChange={(v) => {
-              setHorizontal(v);
-              if (!v) setPagingEnabled(false); // paginado solo si es horizontal
-            }}
-          />
-        </View>
-
-        <View style={styles.controlRow}>
-          <Text>Mostrar indicadores:</Text>
-          <Switch value={showIndicators} onValueChange={setShowIndicators} />
-        </View>
-
-        <View style={styles.controlRow}>
-          <Text>Scroll habilitado:</Text>
-          <Switch value={scrollEnabled} onValueChange={setScrollEnabled} />
-        </View>
-
-        <View style={styles.controlRow}>
-          <Text>Efecto rebote:</Text>
-          <Switch value={bounces} onValueChange={setBounces} />
-        </View>
-
-        <View style={styles.controlRow}>
-          <Text>Modo página:</Text>
-          <Switch
-            value={pagingEnabled}
-            onValueChange={setPagingEnabled}
-            disabled={!horizontal}
-          />
-        </View>
-
-        <View style={styles.controlRow}>
-          <Text>Teclado al scroll:</Text>
-          <Button title={keyboardDismissMode} onPress={changeKeyboardMode} />
-        </View>
-
-        <View style={styles.buttonRow}>
-          <Button title="Ir al inicio" onPress={scrollToTop} />
-          <Button title="Ir al final" onPress={scrollToEnd} />
-        </View>
+      {/* Contenedor de botones para cambiar de vista */}
+      <View style={styles.switchContainer}>
+        <TouchableOpacity
+          style={[styles.switchButton, tipoDeLista === 'section' && styles.switchButtonActive]}
+          onPress={() => setTipoDeLista('section')}
+        >
+          <Text style={[styles.switchButtonText, tipoDeLista === 'section' && styles.switchButtonTextActive]}>
+            Ver por Sección (SectionList)
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.switchButton, tipoDeLista === 'flat' && styles.switchButtonActive]}
+          onPress={() => setTipoDeLista('flat')}
+        >
+          <Text style={[styles.switchButtonText, tipoDeLista === 'flat' && styles.switchButtonTextActive]}>
+            Ver Lista Completa (FlatList)
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Área deslizable */}
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}
-        horizontal={horizontal}
-        showsHorizontalScrollIndicator={showIndicators}
-        showsVerticalScrollIndicator={showIndicators}
-        scrollEnabled={scrollEnabled}
-        bounces={bounces}
-        pagingEnabled={pagingEnabled}
-        keyboardDismissMode={keyboardDismissMode}
-        /* Ajustes extra cuando hay paginado horizontal */
-        snapToInterval={horizontal && pagingEnabled ? width : undefined}
-        decelerationRate={horizontal && pagingEnabled ? 'fast' : 'normal'}
-      >
-        {['orange', 'blue', 'green', 'red', 'black'].map((color, i) => (
-          <View
-            key={color} /* clave estable */
-            style={[
-              styles.block,
-              {
-                backgroundColor: color,
-                width: horizontal ? width * 0.8 : width - 20,
-              },
-            ]}
-          >
-            <Text style={styles.blockText}>Bloque {i + 1}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Escribe aquí..."
-              value={text}
-              onChangeText={setText}
-            />
-          </View>
-        ))}
-      </ScrollView>
+      {/* Renderizado condicional de la lista */}
+      {tipoDeLista === 'section' ? (
+        // EJEMPLO DE SECTIONLIST
+        <SectionList
+          sections={secciones}
+          keyExtractor={(item) => `section-${item.id.toString()}`}
+          renderItem={renderItemPokemon}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.header}>Tipo: {title}</Text>
+          )}
+          ListHeaderComponent={<Text style={styles.mainTitle}>Pokédex con SectionList</Text>}
+        />
+      ) : (
+        // EJEMPLO DE FLATLIST
+        <FlatList
+          data={pokemonPlano}
+          keyExtractor={(item) => `flat-${item.id.toString()}`}
+          renderItem={renderItemPokemon}
+          ListHeaderComponent={<Text style={styles.mainTitle}>Pokédex con FlatList</Text>}
+        />
+      )}
     </SafeAreaView>
   );
 };
 
-//estilos xd
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0f0f0' },
-
-  controls: {
-    padding: 15,
-    backgroundColor: 'white',
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  loader: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mainTitle: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginVertical: 15,
+    color: '#333',
+  },
+  switchContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 10,
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
   },
-  title: {
-    fontSize: 18,
+  switchButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#ff5733',
+  },
+  switchButtonActive: {
+    backgroundColor: '#ff5733',
+  },
+  switchButtonText: {
+    color: '#ff5733',
+    fontWeight: '600',
+  },
+  switchButtonTextActive: {
+    color: '#fff',
+  },
+  header: {
+    fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
+    backgroundColor: '#e0e0e0',
+    padding: 12,
+    color: '#424242',
   },
-  controlRow: {
+  item: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 5,
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+    backgroundColor: '#fff',
   },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 10,
+  image: {
+    width: 60,
+    height: 60,
+    marginRight: 15,
+    borderRadius: 30, // Hacemos la imagen circular
+    backgroundColor: '#eee',
   },
-
-  scrollView: { flex: 1 },
-  contentContainer: { padding: 10 },
-
-  block: {
-    height: 150,
-    margin: 10,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+  name: {
+    fontSize: 18,
+    fontWeight: '500',
   },
-  blockText: { color: 'white', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
-  input: { backgroundColor: 'white', width: '100%', padding: 8, borderRadius: 5 },
 });
 
 export default App;
